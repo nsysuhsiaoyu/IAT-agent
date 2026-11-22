@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<script>
+/* =====================================================================
+ * CONFIG 設定區：研究人員只需要修改這裡
+ * ===================================================================== */
+const CONFIG = {
+  title: '分類作業',
+  categories: {
+    c1:  { name: '中高齡', words: ['50歲', '53歲', '56歲', '59歲'] },  // 概念 1
+    c2:  { name: '年輕',   words: ['26歲', '28歲', '30歲', '32歲'] },  // 概念 2
+    pos: { name: '靈活',   words: ['彈性', '變通', '好學', '求新'] },  // 正向屬性
+    neg: { name: '呆板',   words: ['呆板', '固執', '守舊', '死板'] }   // 負向屬性
+  },
+  endpoint: 'https://script.google.com/macros/s/AKfycbwjlNaqBBYMGAxyc-qADRpmJFRPkanMmxIEuiGOz_Ts6jQjFqpYq9e9PILJ9ghJEDPX/exec'   // 資料接收網址；留空字串時，結束畫面直接提供「下載 CSV」
+};
+</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>分類作業</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --fg: #1d1d1f; --muted: #6b6b70; --card: #ffffff;
+    --line: #d9d9de; --concept: #1f5fbf; --attr: #2e7d32; --err: #d32f2f;
+    --btn: #ececf0; --btn-press: #d4d4dc; --accent: #1f5fbf;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  }
+  .screen { display: none; min-height: 100vh; min-height: 100dvh; }
+  .screen.active { display: flex; }
+
+  /* 開始與結束畫面 */
+  #start, #end { align-items: center; justify-content: center; padding: 24px 16px; }
+  .card {
+    width: 100%; max-width: 440px; background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 28px 24px; text-align: center;
+  }
+  .card h1 { margin: 0 0 20px; font-size: 1.6rem; }
+  .field { text-align: left; margin-bottom: 18px; }
+  .field label.lbl { display: block; font-weight: 600; margin-bottom: 6px; }
+  .field .hint { font-size: .85rem; color: var(--muted); margin-top: 4px; }
+  input[type=text] {
+    width: 100%; font-size: 1.1rem; padding: 10px 12px; border: 1px solid var(--line);
+    border-radius: 8px; -webkit-user-select: text; user-select: text;
+  }
+  .radios { display: flex; gap: 12px; }
+  .radios label {
+    flex: 1; border: 1px solid var(--line); border-radius: 8px; padding: 10px; text-align: center; cursor: pointer;
+  }
+  .radios input { margin-right: 6px; }
+  .primary {
+    font-size: 1.1rem; padding: 12px 28px; border: 0; border-radius: 8px;
+    background: var(--accent); color: #fff; cursor: pointer;
+  }
+  .secondary {
+    font-size: 1rem; padding: 10px 22px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--card); color: var(--fg); cursor: pointer; margin-top: 10px;
+  }
+  .msg { color: var(--err); min-height: 1.4em; margin: 8px 0 0; font-size: .95rem; }
+  #pendingBox { margin-top: 22px; font-size: .85rem; color: var(--muted); display: none; }
+
+  /* 作業畫面 */
+  #task { flex-direction: column; }
+  .labels { display: flex; justify-content: space-between; padding: 16px 16px 0; gap: 12px; }
+  .label { font-size: 1.35rem; font-weight: 700; line-height: 1.35; max-width: 48%; }
+  .label.right { text-align: right; }
+  .label .c { color: var(--concept); }
+  .label .a { color: var(--attr); }
+  .label .or { display: block; font-size: .9rem; color: var(--muted); font-weight: 400; }
+  .center {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 0 16px; min-height: 160px;
+  }
+  #stim { font-size: 2.6rem; font-weight: 700; min-height: 1.3em; }
+  #stim.c { color: var(--concept); }
+  #stim.a { color: var(--attr); }
+  #errMark { color: var(--err); font-size: 3rem; font-weight: 700; visibility: hidden; line-height: 1.1; }
+  #errMark small { display: block; font-size: 1rem; font-weight: 400; }
+  #instr {
+    display: none; max-width: 560px; background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 20px; font-size: 1.05rem; line-height: 1.7;
+  }
+  #instr p { margin: 0 0 10px; }
+  #instr .note { color: var(--err); font-weight: 600; }
+  #instr .startrow { text-align: center; margin-top: 14px; }
+  .keys { display: flex; gap: 12px; padding: 0 16px 16px; }
+  .resp {
+    flex: 1; height: 26vh; min-height: 110px; border: 2px solid var(--line); border-radius: 14px;
+    background: var(--btn); font-size: 1.4rem; font-weight: 700; color: var(--fg);
+    touch-action: none; cursor: pointer;
+  }
+  .resp small { display: block; font-size: .9rem; font-weight: 400; color: var(--muted); margin-top: 6px; }
+  .resp.pressed { background: var(--btn-press); }
+  .progress { text-align: center; color: var(--muted); font-size: .85rem; padding-bottom: 6px; }
+</style>
+</head>
+<body>
+
+<!-- 開始畫面：只詢問受測者代碼與作答次數 -->
+<section id="start" class="screen active">
+  <div class="card">
+    <h1 id="titleStart"></h1>
+    <div class="field">
+      <label class="lbl" for="pid">受測者代碼</label>
+      <input type="text" id="pid" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="40">
+      <div class="hint">請輸入研究人員提供給您的代碼（請勿輸入姓名或員工編號）。</div>
+    </div>
+    <div class="field">
+      <span class="lbl" style="display:block;font-weight:600;margin-bottom:6px">這是第幾次作答？</span>
+      <div class="radios">
+        <label><input type="radio" name="session" value="1">第 1 次</label>
+        <label><input type="radio" name="session" value="2">第 2 次</label>
+      </div>
+    </div>
+    <button class="primary" id="btnBegin" type="button">開始</button>
+    <p class="msg" id="startMsg"></p>
+    <div id="pendingBox">
+      研究人員：此裝置上有 <span id="pendingN">0</span> 份尚未成功送出的資料。<br>
+      <button class="secondary" id="btnPendingCsv" type="button">下載這些資料（CSV）</button>
+      <button class="secondary" id="btnPendingSend" type="button">重新傳送</button>
+    </div>
+  </div>
+</section>
+
+<!-- 作業畫面 -->
+<section id="task" class="screen">
+  <div class="labels">
+    <div class="label left" id="labelL"></div>
+    <div class="label right" id="labelR"></div>
+  </div>
+  <div class="center">
+    <div id="instr"></div>
+    <div id="stim"></div>
+    <div id="errMark">✕<small>請改按另一邊</small></div>
+  </div>
+  <div class="progress" id="progress"></div>
+  <div class="keys">
+    <button class="resp" id="btnL" type="button">左<small class="keyhint">E 鍵</small></button>
+    <button class="resp" id="btnR" type="button">右<small class="keyhint">I 鍵</small></button>
+  </div>
+</section>
+
+<!-- 結束畫面：只顯示完成與感謝，不顯示任何分數或反應時間 -->
+<section id="end" class="screen">
+  <div class="card">
+    <h1>作答完成</h1>
+    <p style="font-size:1.1rem;margin:0 0 16px">感謝您的參與！</p>
+    <p id="sendStatus" style="color:var(--muted)"></p>
+    <div id="failBox" style="display:none">
+      <button class="primary" id="btnCsv" type="button">下載 CSV</button><br>
+      <button class="secondary" id="btnRetry" type="button">重新傳送</button>
+    </div>
+  </div>
+</section>
+
+<script>
+'use strict';
+
+/* ---------------------------- 常數 ---------------------------- */
+const BLOCK_TRIALS = [20, 20, 20, 40, 20, 20, 40];         // 區段 1–7 的嘗試次數
+const FIELDS = ['block', 'pairing', 'phase', 'trial', 'category', 'stimulus', 'correct', 'rt_ms'];
+const ITI_MS = 250;                                          // 兩個字詞之間的空白間隔
+const PENDING_KEY = 'iat_pending_v1';                        // 未送出資料的本機備份
+
+/* ---------------------------- 狀態 ---------------------------- */
+let participant = { id: '', session: null, order: null };
+let blocks = [];
+let bi = 0;                // 目前區段索引
+let trials = [];           // 目前區段的嘗試清單
+let ti = 0;                // 目前嘗試索引
+let state = 'start';       // start | instr | iti | wait | trial | done
+let t0 = 0;                // 字詞出現時間
+let firstError = false;    // 本次嘗試是否第一次按錯
+const data = [];           // 原始資料
+let payload = null;
+let delivered = false;     // 已成功送出或已下載
+
+/* ---------------------------- 工具函式 ---------------------------- */
+const $ = id => document.getElementById(id);
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function round4(x) {
+  if (x === null || x === undefined || !isFinite(x)) return null;
+  return Math.sign(x) * Math.round((Math.abs(x) + Number.EPSILON) * 1e4) / 1e4;
+}
+function mean(a) { return a.reduce((s, v) => s + v, 0) / a.length; }
+function sdSample(a) {                     // 標準差，分母 n − 1
+  const m = mean(a);
+  return Math.sqrt(a.reduce((s, v) => s + (v - m) * (v - m), 0) / (a.length - 1));
+}
+function isConcept(cat) { return cat === 'c1' || cat === 'c2'; }
+
+/* ---------------------------- 區段設計 ----------------------------
+ * 屬性位置固定：正向在左、負向在右。
+ * 配對 A：概念 1 與正向同鍵 → 概念 1 在左。
+ * 配對 B：概念 1 與負向同鍵 → 概念 1 在右。
+ * order 1：區段 1–4 為配對 A，區段 5–7 為配對 B；order 2 相反。
+ * 區段 1、2 的 pairing 記為前半的配對；區段 5 記為後半的配對。
+ * --------------------------------------------------------------- */
+function buildBlocks(order) {
+  const first = order === 1 ? 'A' : 'B';
+  const second = order === 1 ? 'B' : 'A';
+  const sides = p => (p === 'A' ? { L: 'c1', R: 'c2' } : { L: 'c2', R: 'c1' });
+  const s1 = sides(first), s2 = sides(second);
+  const def = [
+    { phase: 'single',   pairing: first,  left: [s1.L],        right: [s1.R] },
+    { phase: 'single',   pairing: first,  left: ['pos'],       right: ['neg'] },
+    { phase: 'practice', pairing: first,  left: [s1.L, 'pos'], right: [s1.R, 'neg'] },
+    { phase: 'test',     pairing: first,  left: [s1.L, 'pos'], right: [s1.R, 'neg'] },
+    { phase: 'single',   pairing: second, left: [s2.L],        right: [s2.R], swapped: true },
+    { phase: 'practice', pairing: second, left: [s2.L, 'pos'], right: [s2.R, 'neg'] },
+    { phase: 'test',     pairing: second, left: [s2.L, 'pos'], right: [s2.R, 'neg'] }
+  ];
+  return def.map((d, i) => Object.assign({ block: i + 1, n: BLOCK_TRIALS[i] }, d));
+}
+
+// 依類別平均分配次數，每個類別內的字詞輪流使用
+function balanced(cats, n) {
+  const items = [];
+  const base = Math.floor(n / cats.length);
+  let extra = n - base * cats.length;
+  shuffle(cats.slice()).forEach(cat => {
+    const k = base + (extra-- > 0 ? 1 : 0);
+    let pool = [];
+    while (pool.length < k) pool = pool.concat(shuffle(CONFIG.categories[cat].words.slice()));
+    pool.slice(0, k).forEach(w => items.push({ category: cat, stimulus: w }));
+  });
+  return items;
+}
+function noImmediateRepeat(list) {
+  for (let i = 1; i < list.length; i++) if (list[i].stimulus === list[i - 1].stimulus) return false;
+  return true;
+}
+function buildTrials(b) {
+  const cats = b.left.concat(b.right);
+  let list;
+  if (b.phase === 'single') {
+    const base = balanced(cats, b.n);
+    for (let tries = 0; tries < 2000; tries++) {
+      list = shuffle(base.slice());
+      if (noImmediateRepeat(list)) break;
+    }
+  } else {
+    // 合併區段：概念與屬性字詞交替出現
+    const cc = cats.filter(isConcept), aa = cats.filter(c => !isConcept(c));
+    const nC = Math.ceil(b.n / 2), nA = b.n - nC;
+    const cl = shuffle(balanced(cc, nC)), al = shuffle(balanced(aa, nA));
+    const conceptFirst = Math.random() < 0.5;
+    list = [];
+    for (let i = 0; list.length < b.n; i++) {
+      const pair = conceptFirst ? [cl[i], al[i]] : [al[i], cl[i]];
+      pair.forEach(x => { if (x && list.length < b.n) list.push(x); });
+    }
+  }
+  return list.map(x => Object.assign({ side: b.left.includes(x.category) ? 'L' : 'R' }, x));
+}
+
+/* ---------------------------- 畫面 ---------------------------- */
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
+}
+function renderLabel(el, cats) {
+  el.textContent = '';
+  cats.forEach((cat, i) => {
+    if (i > 0) { const o = document.createElement('span'); o.className = 'or'; o.textContent = '或'; el.appendChild(o); }
+    const s = document.createElement('span');
+    s.className = isConcept(cat) ? 'c' : 'a';
+    s.textContent = CONFIG.categories[cat].name;
+    el.appendChild(s);
+    if (i < cats.length - 1) el.appendChild(document.createElement('br'));
+  });
+}
+function nameList(cats) { return cats.map(c => '「' + CONFIG.categories[c].name + '」').join('或'); }
+
+function showInstructions() {
+  const b = blocks[bi];
+  renderLabel($('labelL'), b.left);
+  renderLabel($('labelR'), b.right);
+  $('stim').textContent = '';
+  $('errMark').style.visibility = 'hidden';
+  $('progress').textContent = '第 ' + b.block + ' 部分，共 ' + blocks.length + ' 部分';
+  const box = $('instr');
+  box.textContent = '';
+  const add = (html, cls) => { const p = document.createElement('p'); if (cls) p.className = cls; p.textContent = html; box.appendChild(p); };
+  if (b.swapped) add('注意：上方類別的左右位置已經互換了！', 'note');
+  add('畫面中央會依序出現字詞。');
+  add('屬於' + nameList(b.left) + '的字詞，請按左邊（電腦按 E 鍵）。');
+  add('屬於' + nameList(b.right) + '的字詞，請按右邊（電腦按 I 鍵）。');
+  add('按錯時會出現紅色 ✕，請改按另一邊才會繼續。請盡量又快又正確地作答。');
+  const row = document.createElement('div');
+  row.className = 'startrow';
+  const btn = document.createElement('button');
+  btn.className = 'primary'; btn.type = 'button'; btn.textContent = '準備好了，開始';
+  btn.addEventListener('click', startBlock);
+  row.appendChild(btn);
+  const hint = document.createElement('div');
+  hint.style.cssText = 'font-size:.85rem;color:var(--muted);margin-top:6px';
+  hint.textContent = '（電腦也可以按空白鍵開始）';
+  row.appendChild(hint);
+  box.appendChild(row);
+  box.style.display = 'block';
+  state = 'instr';
+}
+
+function startBlock() {
+  if (state !== 'instr') return;
+  state = 'iti';
+  if (document.activeElement) document.activeElement.blur();
+  $('instr').style.display = 'none';
+  trials = buildTrials(blocks[bi]);
+  ti = 0;
+  setTimeout(showTrial, 600);
+}
+
+function showTrial() {
+  const t = trials[ti];
+  firstError = false;
+  $('errMark').style.visibility = 'hidden';
+  const s = $('stim');
+  s.className = isConcept(t.category) ? 'c' : 'a';
+  s.textContent = t.stimulus;
+  state = 'wait';
+  // 在字詞畫上畫面的那一幀開始計時
+  requestAnimationFrame(() => { t0 = performance.now(); state = 'trial'; });
+}
+
+function respond(side) {
+  if (state !== 'trial') return;
+  const t = trials[ti];
+  if (side !== t.side) {                 // 按錯：顯示提示，等待改按正確的一邊
+    firstError = true;
+    $('errMark').style.visibility = 'visible';
+    return;
+  }
+  const rt = Math.round(performance.now() - t0);
+  const b = blocks[bi];
+  data.push({
+    block: b.block, pairing: b.pairing, phase: b.phase, trial: ti + 1,
+    category: t.category, stimulus: t.stimulus, correct: firstError ? 0 : 1, rt_ms: rt
+  });
+  state = 'iti';
+  $('stim').textContent = '';
+  $('errMark').style.visibility = 'hidden';
+  ti++;
+  if (ti < trials.length) {
+    setTimeout(showTrial, ITI_MS);
+  } else {
+    bi++;
+    if (bi < blocks.length) setTimeout(showInstructions, ITI_MS);
+    else finish();
+  }
+}
+
+/* ---------------------------- 計分 ---------------------------- */
+function dPart(rows) {
+  const A = rows.filter(r => r.pairing === 'A').map(r => r.rt_ms);
+  const B = rows.filter(r => r.pairing === 'B').map(r => r.rt_ms);
+  const all = rows.map(r => r.rt_ms);
+  if (A.length === 0 || B.length === 0 || all.length < 2) return null;
+  const s = sdSample(all);
+  if (!(s > 0)) return null;
+  return (mean(B) - mean(A)) / s;
+}
+function computeScore(rows) {
+  const inc = rows.filter(r => (r.phase === 'practice' || r.phase === 'test') && r.rt_ms <= 10000);
+  const n = inc.length;
+  const errorRate = n ? inc.filter(r => r.correct === 0).length / n : null;
+  const fastRate = n ? inc.filter(r => r.rt_ms < 300).length / n : null;
+  const dP = dPart(inc.filter(r => r.phase === 'practice'));
+  const dT = dPart(inc.filter(r => r.phase === 'test'));
+  let D = (dP !== null && dT !== null) ? (dP + dT) / 2 : null;
+  if (fastRate === null || fastRate > 0.10) D = null;
+  return {
+    n_trials: n,
+    error_rate: round4(errorRate),
+    fast_rate: round4(fastRate),
+    D_practice: round4(dP),
+    D_test: round4(dT),
+    D: round4(D)
+  };
+}
+
+/* ---------------------------- 儲存與傳送 ---------------------------- */
+function readPending() {
+  try { return JSON.parse(localStorage.getItem(PENDING_KEY) || '[]') || []; } catch (e) { return []; }
+}
+function writePending(list) {
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify(list)); } catch (e) { /* 無法使用本機儲存時略過 */ }
+}
+function addPending(p) { const l = readPending(); l.push(p); writePending(l); }
+function removePending(p) { writePending(readPending().filter(x => x.uid !== p.uid)); }
+
+async function sendPayload(p) {
+  if (!CONFIG.endpoint) return false;
+  const body = Object.assign({}, p);
+  delete body.uid;                                   // uid 只用於本機備份
+  try {
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 20000) : null;
+    const res = await fetch(CONFIG.endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body),
+      signal: ctrl ? ctrl.signal : undefined
+    });
+    if (timer) clearTimeout(timer);
+    const txt = (await res.text()).trim();
+    return res.ok && txt === 'ok';
+  } catch (e) {
+    return false;
+  }
+}
+
+function toCSV(rows) {
+  const esc = v => {
+    const s = v === null || v === undefined ? '' : String(v);
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = [FIELDS.join(',')].concat(rows.map(r => FIELDS.map(f => esc(r[f])).join(',')));
+  return '﻿' + lines.join('\r\n') + '\r\n';     // BOM 讓 Excel 正確顯示中文
+}
+function safeName(s) { return String(s).replace(/[^0-9A-Za-z_\-一-鿿]/g, '_').slice(0, 40) || 'noid'; }
+function downloadCSV(p) {
+  const name = 'IAT_' + safeName(p.id) + '_s' + p.session + '_o' + p.order + '.csv';
+  const blob = new Blob([toCSV(p.trials)], { type: 'text/csv;charset=utf-8' });
+  if (window.navigator && window.navigator.msSaveOrOpenBlob) { window.navigator.msSaveOrOpenBlob(blob, name); return; }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name; a.style.display = 'none';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 4000);
+}
+
+async function finish() {
+  state = 'done';
+  payload = {
+    id: participant.id,
+    session: participant.session,
+    order: participant.order,
+    trials: data.slice(),
+    score: computeScore(data),
+    uid: Date.now() + '_' + Math.random().toString(36).slice(2)
+  };
+  addPending(payload);                    // 送出成功前，先在本機留一份備份
+  showScreen('end');
+  await attemptSend();
+}
+
+async function attemptSend() {
+  const status = $('sendStatus');
+  $('failBox').style.display = 'none';
+  if (CONFIG.endpoint) {
+    status.textContent = '資料傳送中，請稍候，先不要關閉此頁面……';
+    $('btnRetry').style.display = '';
+  } else {
+    $('btnRetry').style.display = 'none';
+  }
+  const ok = await sendPayload(payload);
+  if (ok) {
+    delivered = true;
+    removePending(payload);
+    status.textContent = '資料已送出，您可以關閉此頁面。';
+  } else {
+    status.textContent = '資料尚未送出。請按下方「下載 CSV」，並將檔案交給研究人員。';
+    $('failBox').style.display = 'block';
+  }
+}
+
+/* ---------------------------- 事件 ---------------------------- */
+function initStart() {
+  document.title = CONFIG.title;
+  $('titleStart').textContent = CONFIG.title;
+  const pend = readPending();
+  if (pend.length) { $('pendingN').textContent = pend.length; $('pendingBox').style.display = 'block'; }
+}
+
+$('btnBegin').addEventListener('click', () => {
+  const id = $('pid').value.trim();
+  const sel = document.querySelector('input[name=session]:checked');
+  if (!id) { $('startMsg').textContent = '請輸入受測者代碼。'; return; }
+  if (!sel) { $('startMsg').textContent = '請選擇第 1 次或第 2 次作答。'; return; }
+  participant.id = id;
+  participant.session = Number(sel.value);
+  participant.order = Math.random() < 0.5 ? 1 : 2;   // 1 = 先做配對 A；2 = 先做配對 B
+  blocks = buildBlocks(participant.order);
+  bi = 0;
+  data.length = 0;
+  if (document.activeElement) document.activeElement.blur();
+  showScreen('task');
+  showInstructions();
+});
+
+$('btnCsv').addEventListener('click', () => { downloadCSV(payload); delivered = true; });
+$('btnRetry').addEventListener('click', () => attemptSend());
+
+$('btnPendingCsv').addEventListener('click', () => { readPending().forEach((p, i) => setTimeout(() => downloadCSV(p), i * 600)); });
+$('btnPendingSend').addEventListener('click', async () => {
+  const list = readPending();
+  for (const p of list) { if (await sendPayload(p)) removePending(p); }
+  const left = readPending().length;
+  $('pendingN').textContent = left;
+  if (!left) $('pendingBox').style.display = 'none';
+});
+
+// 手機：左右大按鈕（pointerdown 立即反應，不等 click 延遲）
+function bindResp(btn, side) {
+  const down = e => {
+    e.preventDefault();
+    btn.classList.add('pressed');
+    setTimeout(() => btn.classList.remove('pressed'), 120);
+    respond(side);
+  };
+  if (window.PointerEvent) btn.addEventListener('pointerdown', down);
+  else { btn.addEventListener('touchstart', down, { passive: false }); btn.addEventListener('mousedown', down); }
+  btn.addEventListener('contextmenu', e => e.preventDefault());
+}
+bindResp($('btnL'), 'L');
+bindResp($('btnR'), 'R');
+
+// 電腦：E 鍵 = 左、I 鍵 =右（同時檢查 code，避免中文輸入法影響）
+document.addEventListener('keydown', e => {
+  if (state === 'instr' && (e.code === 'Space' || e.key === ' ')) {
+    e.preventDefault(); startBlock(); return;
+  }
+  if (state !== 'trial' && state !== 'wait' && state !== 'iti') return;
+  if (e.repeat) { e.preventDefault(); return; }
+  let side = null;
+  if (e.code === 'KeyE' || e.key === 'e' || e.key === 'E') side = 'L';
+  else if (e.code === 'KeyI' || e.key === 'i' || e.key === 'I') side = 'R';
+  if (side) { e.preventDefault(); respond(side); }
+});
+
+// 資料尚未送出或下載前，提醒不要關閉頁面
+window.addEventListener('beforeunload', e => {
+  if (state !== 'start' && !delivered) { e.preventDefault(); e.returnValue = ''; }
+});
+
+initStart();
+</script>
+</body>
+</html>
